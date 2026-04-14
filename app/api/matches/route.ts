@@ -124,7 +124,8 @@ async function fetchWithFallback(url: string): Promise<PandaScoreMatch[]> {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const search = searchParams.get("search")?.toLowerCase() || ""
+  const teamSearch = searchParams.get("search")?.toLowerCase() || ""
+  const tournamentSearch = searchParams.get("tournament")?.toLowerCase() || ""
 
   if (!API_TOKEN) {
     return NextResponse.json(
@@ -207,14 +208,18 @@ export async function GET(request: Request) {
         }
       })
       .filter((match) => {
-        if (search) {
-          return (
-            match.team1.name.toLowerCase().includes(search) ||
-            match.team2.name.toLowerCase().includes(search) ||
-            match.tournament.toLowerCase().includes(search)
-          )
-        }
-        return true
+        // Filter by team name
+        const matchesTeam = teamSearch
+          ? match.team1.name.toLowerCase().includes(teamSearch) ||
+            match.team2.name.toLowerCase().includes(teamSearch)
+          : true
+
+        // Filter by tournament name
+        const matchesTournament = tournamentSearch
+          ? match.tournament.toLowerCase().includes(tournamentSearch)
+          : true
+
+        return matchesTeam && matchesTournament
       })
 
     return NextResponse.json({ matches })
