@@ -5,6 +5,7 @@ import useSWR from "swr"
 import { MatchCard } from "./match-card"
 import { MatchFilters } from "./match-filters"
 import { TeamSearch } from "./team-search"
+import { TournamentSearch } from "./tournament-search"
 import { FavoritesBar } from "./favorites-bar"
 import { useFavorites } from "@/hooks/use-favorites"
 import type { Match } from "@/lib/types"
@@ -22,12 +23,13 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json())
 export function MatchesList() {
   const [filter, setFilter] = useState<"all" | "live" | "upcoming" | "finished">("all")
   const [searchQuery, setSearchQuery] = useState("")
+  const [tournamentQuery, setTournamentQuery] = useState("")
   const [selectedTeam, setSelectedTeam] = useState<TeamSuggestion | null>(null)
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   
   const { favorites, toggleFavorite, isFavorite, removeFavorite } = useFavorites()
 
-  const apiUrl = `/api/matches?search=${encodeURIComponent(searchQuery)}`
+  const apiUrl = `/api/matches?search=${encodeURIComponent(searchQuery)}&tournament=${encodeURIComponent(tournamentQuery)}`
 
   const { data, error, isLoading, isValidating, mutate } = useSWR(apiUrl, fetcher, {
     refreshInterval: 30000,
@@ -79,11 +81,17 @@ export function MatchesList() {
       
       {/* Search and Filters */}
       <div className="flex flex-col gap-4">
-        <TeamSearch
-          value={searchQuery}
-          onChange={setSearchQuery}
-          onSelect={handleTeamSelect}
-        />
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <TeamSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onSelect={handleTeamSelect}
+          />
+          <TournamentSearch
+            value={tournamentQuery}
+            onChange={setTournamentQuery}
+          />
+        </div>
         
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <MatchFilters
@@ -156,13 +164,13 @@ export function MatchesList() {
       {!isLoading && !apiError && displayedMatches.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 py-16">
           <p className="text-lg font-medium text-muted-foreground">
-            {searchQuery
-              ? `Nenhuma partida encontrada para "${searchQuery}"`
+            {searchQuery || tournamentQuery
+              ? `Nenhuma partida encontrada${searchQuery ? ` para "${searchQuery}"` : ""}${tournamentQuery ? ` no campeonato "${tournamentQuery}"` : ""}`
               : "Nenhuma partida encontrada"}
           </p>
           <p className="text-sm text-muted-foreground/70">
-            {searchQuery
-              ? "Tente buscar por outro time"
+            {searchQuery || tournamentQuery
+              ? "Tente buscar por outro time ou campeonato"
               : "Tente outro filtro ou aguarde novas partidas"}
           </p>
         </div>
