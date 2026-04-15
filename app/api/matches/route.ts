@@ -123,9 +123,9 @@ async function fetchWithFallback(url: string): Promise<PandaScoreMatch[]> {
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const teamSearch = searchParams.get("search")?.toLowerCase() || ""
-  const tournamentSearch = searchParams.get("tournament")?.toLowerCase() || ""
+  const { searchParams: urlParams } = new URL(request.url)
+  const teamSearch = urlParams.get("search")?.toLowerCase() || ""
+  const tournamentSearch = urlParams.get("tournament")?.toLowerCase() || ""
 
   if (!API_TOKEN) {
     return NextResponse.json(
@@ -135,16 +135,33 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Fetch all three categories - only 3 API calls total
+    // Build search parameters for PandaScore API
+    const apiParams = new URLSearchParams()
+    apiParams.set("token", API_TOKEN)
+    
+    // Use native API search for team name (more accurate results with history)
+    if (teamSearch) {
+      apiParams.set("search[name]", teamSearch)
+    }
+    
+    // Use native API filter for tournament/league name
+    if (tournamentSearch) {
+      apiParams.set("search[league.name]", tournamentSearch)
+    }
+
+    const isSearching = teamSearch || tournamentSearch
+    const pastMatchesLimit = isSearching ? 100 : 15
+
+    // Fetch all three categories
     const [runningData, upcomingData, pastData] = await Promise.all([
       fetchWithFallback(
-        `${PANDASCORE_API}/csgo/matches/running?token=${API_TOKEN}&per_page=20`,
+        `${PANDASCORE_API}/csgo/matches/running?${apiParams.toString()}&per_page=20`,
       ),
       fetchWithFallback(
-        `${PANDASCORE_API}/csgo/matches/upcoming?token=${API_TOKEN}&per_page=15`,
+        `${PANDASCORE_API}/csgo/matches/upcoming?${apiParams.toString()}&per_page=15`,
       ),
       fetchWithFallback(
-        `${PANDASCORE_API}/csgo/matches/past?token=${API_TOKEN}&per_page=15`,
+        `${PANDASCORE_API}/csgo/matches/past?${apiParams.toString()}&per_page=${pastMatchesLimit}`,
       ),
     ])
 
