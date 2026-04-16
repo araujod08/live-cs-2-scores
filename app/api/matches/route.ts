@@ -135,33 +135,20 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Build search parameters for PandaScore API
-    const apiParams = new URLSearchParams()
-    apiParams.set("token", API_TOKEN)
-    
-    // Use native API search for team name (more accurate results with history)
-    if (teamSearch) {
-      apiParams.set("search[name]", teamSearch)
-    }
-    
-    // Use native API filter for tournament/league name
-    if (tournamentSearch) {
-      apiParams.set("search[league.name]", tournamentSearch)
-    }
-
+    // When user is searching, fetch more past matches to show history
     const isSearching = teamSearch || tournamentSearch
     const pastMatchesLimit = isSearching ? 100 : 15
 
-    // Fetch all three categories
+    // Fetch all three categories - use simple token auth, filter locally for accuracy
     const [runningData, upcomingData, pastData] = await Promise.all([
       fetchWithFallback(
-        `${PANDASCORE_API}/csgo/matches/running?${apiParams.toString()}&per_page=20`,
+        `${PANDASCORE_API}/csgo/matches/running?token=${API_TOKEN}&per_page=20`,
       ),
       fetchWithFallback(
-        `${PANDASCORE_API}/csgo/matches/upcoming?${apiParams.toString()}&per_page=15`,
+        `${PANDASCORE_API}/csgo/matches/upcoming?token=${API_TOKEN}&per_page=30`,
       ),
       fetchWithFallback(
-        `${PANDASCORE_API}/csgo/matches/past?${apiParams.toString()}&per_page=${pastMatchesLimit}`,
+        `${PANDASCORE_API}/csgo/matches/past?token=${API_TOKEN}&per_page=${pastMatchesLimit}`,
       ),
     ])
 
@@ -170,6 +157,21 @@ export async function GET(request: Request) {
       ...upcomingData,
       ...pastData,
     ]
+
+    // Debug: log tournament names when searching
+    if (tournamentSearch) {
+      const tournamentNames = allMatches.map(m => m.league?.name || m.tournament?.name || "Unknown")
+      const uniqueTournaments = [...new Set(tournamentNames)]
+      console.log("[v0] Searching for tournament:", tournamentSearch)
+      console.log("[v0] Available tournaments:", uniqueTournaments)
+      
+      // Check which matches match
+      const matchingMatches = allMatches.filter(m => {
+        const name = (m.league?.name || m.tournament?.name || "").toLowerCase()
+        return name.includes(tournamentSearch)
+      })
+      console.log("[v0] Matching matches count:", matchingMatches.length)
+    }
 
     const matches = allMatches
       .filter((match) => match.opponents && match.opponents.length === 2)
