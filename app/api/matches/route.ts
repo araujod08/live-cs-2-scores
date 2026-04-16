@@ -158,21 +158,6 @@ export async function GET(request: Request) {
       ...pastData,
     ]
 
-    // Debug: log tournament names when searching
-    if (tournamentSearch) {
-      const tournamentNames = allMatches.map(m => m.league?.name || m.tournament?.name || "Unknown")
-      const uniqueTournaments = [...new Set(tournamentNames)]
-      console.log("[v0] Searching for tournament:", tournamentSearch)
-      console.log("[v0] Available tournaments:", uniqueTournaments)
-      
-      // Check which matches match
-      const matchingMatches = allMatches.filter(m => {
-        const name = (m.league?.name || m.tournament?.name || "").toLowerCase()
-        return name.includes(tournamentSearch)
-      })
-      console.log("[v0] Matching matches count:", matchingMatches.length)
-    }
-
     const matches = allMatches
       .filter((match) => match.opponents && match.opponents.length === 2)
       .map((match) => {
