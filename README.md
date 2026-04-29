@@ -119,9 +119,9 @@ Este projeto está sob a licença MIT.
 
 Este projeto não é afiliado à Valve ou ao Counter-Strike.
 Os dados utilizados são provenientes de fontes públicas.
-
+```
 👨‍💻 Autor
 
-Desenvolvido por 
+Desenvolvido por <a href="https://github.com/araujod08">araujod08<a/>
 
-Feito com 💻 e ☕ para a comunidade de CS2 ```
+Feito com 💻 e ☕ para a comunidade de CS2
