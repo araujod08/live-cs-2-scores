@@ -25,6 +25,15 @@ interface PandaScoreGame {
   status: string
   position: number
   winner?: { id: number } | null
+  map?: { name: string } | null
+}
+
+interface PandaScoreStream {
+  main: boolean
+  raw_url: string
+  embed_url?: string | null
+  language: string
+  official: boolean
 }
 
 interface PandaScoreMatch {
@@ -36,19 +45,17 @@ interface PandaScoreMatch {
   opponents: PandaScoreOpponent[]
   results?: PandaScoreResult[]
   tournament: {
+    id: number
     name: string
   }
   league: {
+    id: number
     name: string
     image_url: string | null
   }
   number_of_games: number
   games?: PandaScoreGame[]
-  streams_list?: Array<{
-    main: boolean
-    raw_url: string
-    language: string
-  }>
+  streams_list?: PandaScoreStream[]
 }
 
 function mapStatus(status: string): "live" | "upcoming" | "finished" {
@@ -78,7 +85,6 @@ function calculateMapsWon(
   return [team1Maps, team2Maps]
 }
 
-// Build game details from the games array (no extra API calls)
 function buildGameDetails(
   games: PandaScoreGame[] | undefined,
   team1Id: number,
@@ -87,14 +93,14 @@ function buildGameDetails(
   position: number
   status: string
   map?: string
-  winner?: string
+  winner?: "team1" | "team2"
 }> {
   if (!games || games.length === 0) return []
 
   return games
     .filter((g) => g.status === "running" || g.status === "finished")
     .map((game) => {
-      let winner: string | undefined
+      let winner: "team1" | "team2" | undefined
       if (game.winner) {
         if (game.winner.id === team1Id) winner = "team1"
         else if (game.winner.id === team2Id) winner = "team2"
@@ -135,11 +141,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    // When user is searching, fetch more past matches to show history
     const isSearching = teamSearch || tournamentSearch
     const pastMatchesLimit = isSearching ? 100 : 15
 
-    // Fetch all three categories - use simple token auth, filter locally for accuracy
     const [runningData, upcomingData, pastData] = await Promise.all([
       fetchWithFallback(
         `${PANDASCORE_API}/csgo/matches/running?token=${API_TOKEN}&per_page=20`,
@@ -178,8 +182,16 @@ export async function GET(request: Request) {
         const team1Score = team1Result?.score ?? team1.score ?? mapsWon[0]
         const team2Score = team2Result?.score ?? team2.score ?? mapsWon[1]
 
-        const mainStream = match.streams_list?.find((s) => s.main)
-        const anyStream = match.streams_list?.[0]
+        const streams = (match.streams_list || []).map((s) => ({
+          language: s.language,
+          url: s.raw_url,
+          embedUrl: s.embed_url || undefined,
+          main: s.main,
+          official: s.official,
+        }))
+
+        const mainStream = streams.find((s) => s.main)
+        const anyStream = streams[0]
 
         return {
           id: String(match.id),
@@ -199,11 +211,13 @@ export async function GET(request: Request) {
           },
           status: mapStatus(match.status),
           tournament: match.league?.name || match.tournament?.name || "Unknown",
+          tournamentId: match.tournament?.id ? String(match.tournament.id) : undefined,
           tournamentLogo: match.league?.image_url || undefined,
           bestOf: match.number_of_games || 1,
           mapsWon,
           startTime: match.begin_at || match.scheduled_at,
-          streamUrl: mainStream?.raw_url || anyStream?.raw_url,
+          streamUrl: mainStream?.url || anyStream?.url,
+          streams,
           games: buildGameDetails(
             match.games,
             team1.opponent.id,
@@ -212,13 +226,11 @@ export async function GET(request: Request) {
         }
       })
       .filter((match) => {
-        // Filter by team name
         const matchesTeam = teamSearch
           ? match.team1.name.toLowerCase().includes(teamSearch) ||
             match.team2.name.toLowerCase().includes(teamSearch)
           : true
 
-        // Filter by tournament name
         const matchesTournament = tournamentSearch
           ? match.tournament.toLowerCase().includes(tournamentSearch)
           : true

@@ -1,0 +1,26 @@
+{
+  "name": "CS2 Live Scores",
+  "short_name": "CS2 Live",
+  "description": "Placares de CS2 ao vivo, torneios, rankings e estatísticas",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "games", "entertainment"],
+  "lang": "pt-BR"
+}
