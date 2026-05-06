@@ -10,7 +10,6 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'CS2 Live Scores',
   description: 'Acompanhe placares de jogos de CS2 ao vivo',
-  generator: 'v0.app',
   icons: {
     icon: '/favicon.png',
     apple: '/favicon.png',
