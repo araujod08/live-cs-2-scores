@@ -1,9 +1,32 @@
 import { NextResponse } from "next/server"
+import { REGIONS } from "@/lib/types"
 
 const PANDASCORE_API = "https://api.pandascore.co"
 const API_TOKEN = process.env.PANDASCORE_API_KEY
 
-export async function GET() {
+interface PandaScoreTeamRef {
+  id: number
+  name: string
+  image_url: string | null
+  location: string | null
+  acronym?: string | null
+}
+
+interface PandaScoreOpponent {
+  opponent: PandaScoreTeamRef
+}
+
+interface PandaScoreRankingMatch {
+  id: number
+  winner_id: number | null
+  opponents: PandaScoreOpponent[]
+  begin_at: string | null
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const regionFilter = searchParams.get("region") || "all"
+
   if (!API_TOKEN) {
     return NextResponse.json(
       { error: "PANDASCORE_API_KEY not configured" },
@@ -12,88 +35,94 @@ export async function GET() {
   }
 
   try {
-    // Fetch CS:GO/CS2 ranking from PandaScore
+    // Fetch a wide range of recent matches to derive ranking from real activity
     const res = await fetch(
-      `${PANDASCORE_API}/csgo/teams?token=${API_TOKEN}&per_page=50&sort=-current_videogame.id`,
+      `${PANDASCORE_API}/csgo/matches/past?token=${API_TOKEN}&per_page=100&sort=-end_at`,
       {
         headers: { Accept: "application/json" },
-        next: { revalidate: 600 },
+        next: { revalidate: 300 },
       },
     )
 
     if (!res.ok) {
-      throw new Error("Failed to fetch teams")
+      console.error("[v0] Rankings: matches fetch failed", res.status)
+      return NextResponse.json({ rankings: [] })
     }
 
-    const teamsData: any[] = await res.json()
+    const matches: PandaScoreRankingMatch[] = await res.json()
 
-    // Get recent matches per team to calculate stats
-    const recentMatchesRes = await fetch(
-      `${PANDASCORE_API}/csgo/matches/past?token=${API_TOKEN}&per_page=100`,
-      {
-        headers: { Accept: "application/json" },
-        next: { revalidate: 600 },
-      },
-    )
+    interface TeamAggregate {
+      id: string
+      name: string
+      logo: string
+      country: string
+      wins: number
+      total: number
+    }
 
-    const recentMatches: any[] = recentMatchesRes.ok
-      ? await recentMatchesRes.json()
-      : []
+    const teamStats = new Map<string, TeamAggregate>()
 
-    // Calculate stats per team
-    const teamStats = new Map<
-      string,
-      { wins: number; total: number }
-    >()
-
-    for (const match of recentMatches) {
+    for (const match of matches) {
       const opps = match.opponents || []
       if (opps.length < 2) continue
-      const winnerId = match.winner_id
       for (const opp of opps) {
-        const teamId = String(opp.opponent.id)
-        const stats = teamStats.get(teamId) || { wins: 0, total: 0 }
-        stats.total++
-        if (winnerId === opp.opponent.id) stats.wins++
-        teamStats.set(teamId, stats)
+        const teamRef = opp.opponent
+        if (!teamRef || !teamRef.id) continue
+        const id = String(teamRef.id)
+        const existing = teamStats.get(id) || {
+          id,
+          name: teamRef.name,
+          logo: teamRef.image_url || "",
+          country: teamRef.location || "",
+          wins: 0,
+          total: 0,
+        }
+        existing.total++
+        if (match.winner_id === teamRef.id) existing.wins++
+        // Update logo/name if missing
+        if (!existing.logo && teamRef.image_url) existing.logo = teamRef.image_url
+        if (!existing.country && teamRef.location) existing.country = teamRef.location
+        teamStats.set(id, existing)
       }
     }
 
-    // Build rankings - filter teams with recent activity
-    const rankings = teamsData
-      .map((team: any, index: number) => {
-        const stats = teamStats.get(String(team.id)) || { wins: 0, total: 0 }
+    // Filter by region
+    const region = REGIONS.find((r) => r.id === regionFilter)
+    const filtered = Array.from(teamStats.values()).filter((t) => {
+      if (regionFilter === "all" || !region) return true
+      return region.countries.includes((t.country || "").toUpperCase())
+    })
+
+    // Score: simple weighted formula combining win rate and activity
+    const scored = filtered
+      .filter((t) => t.total >= 2)
+      .map((t) => {
+        const winRate = t.wins / t.total
+        // Points: weight win rate (0-100) and number of matches (volume)
+        const points = Math.round(winRate * 100 * 10 + t.total * 5)
         return {
-          id: String(team.id),
-          name: team.name,
-          logo: team.image_url || "",
-          country: team.location || "",
-          position: index + 1,
-          recentMatches: stats.total,
-          winRate:
-            stats.total > 0
-              ? Math.round((stats.wins / stats.total) * 100)
-              : 0,
+          ...t,
+          winRate,
+          points,
         }
       })
-      .filter((t) => t.recentMatches >= 2)
-      .sort((a, b) => {
-        // Sort by win rate, then by total matches
-        if (b.winRate !== a.winRate) return b.winRate - a.winRate
-        return b.recentMatches - a.recentMatches
-      })
-      .slice(0, 30)
-      .map((team, index) => ({
-        ...team,
-        position: index + 1,
-      }))
+      .sort((a, b) => b.points - a.points)
+      .slice(0, 50)
+
+    const rankings = scored.map((t, idx) => ({
+      id: t.id,
+      name: t.name,
+      logo: t.logo,
+      country: t.country,
+      position: idx + 1,
+      points: t.points,
+      recentMatches: t.total,
+      winRate: t.winRate,
+    }))
 
     return NextResponse.json({ rankings })
   } catch (error) {
-    console.error("PandaScore API error:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch rankings" },
-      { status: 500 },
-    )
+    console.error("[v0] Rankings API error:", error)
+    return NextResponse.json({ rankings: [] })
   }
 }
