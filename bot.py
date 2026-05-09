@@ -128,7 +128,17 @@ def get_past_matches(per_page: int = 10) -> list:
 
 
 def get_match_detail(match_id: int):
-    return pandascore_get(f"/csgo/matches/{match_id}")
+    # Endpoint direto pode exigir plano pago; busca via filtro como fallback
+    result = pandascore_get(f"/csgo/matches/{match_id}")
+    if result:
+        return result
+    # fallback: busca nas listas
+    for endpoint in ["/csgo/matches/running", "/csgo/matches/upcoming", "/csgo/matches/past"]:
+        matches = pandascore_get(endpoint, {"per_page": 50}) or []
+        for m in matches:
+            if m.get("id") == match_id:
+                return m
+    return None
 
 
 def get_all_upcoming_for_teams(team_ids: list) -> list:
@@ -468,11 +478,38 @@ async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Menu", callback_data="menu")]]),
         )
         return
-    text = f"🔴 *AO VIVO* — {len(matches)} partida(s)\n\n"
-    text += "\n\n".join(format_live_match(m) for m in matches[:10])
-    text += "\n\n_/match <ID> para detalhes_"
-    await msg.reply_text(text, parse_mode="Markdown",
-                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Menu", callback_data="menu")]]))
+    # Envia cada partida como mensagem separada com seus botões
+    await msg.reply_text(f"🔴 *AO VIVO* — {len(matches)} partida(s)", parse_mode="Markdown")
+
+    for m in matches[:10]:
+        text = format_live_match(m)
+        mid = m.get("id", "")
+        streams = m.get("streams_list", [])
+
+        keyboard = []
+
+        # Botões de stream (um por idioma disponível, máx 3)
+        stream_buttons = []
+        for s in streams[:3]:
+            url = s.get("raw_url", "")
+            lang = s.get("language", "").upper() or "STREAM"
+            if url:
+                stream_buttons.append(InlineKeyboardButton(f"📺 {lang}", url=url))
+        if stream_buttons:
+            keyboard.append(stream_buttons)
+
+        # Adiciona botão menu apenas na última partida
+        is_last = (m == matches[:10][-1])
+        if is_last:
+            keyboard.append([InlineKeyboardButton("🔙 Menu", callback_data="menu")])
+
+        await msg.reply_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+
 
 
 async def cmd_upcoming(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -528,39 +565,58 @@ async def cmd_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     match_type = match.get("match_type", "")
     n_games = match.get("number_of_games", "")
     begin_at = format_datetime(match.get("begin_at", ""))
+    n1 = t1.get("name", "TBD")
+    n2 = t2.get("name", "TBD")
 
-    text = (
-        f"🎮 *DETALHES DA PARTIDA*\n\n"
-        f"*Status:* {status_label}\n"
-        f"*Data:* {begin_at}\n"
-        f"*Liga:* {league}\n"
-        f"*Série:* {serie}\n"
-        f"*Torneio:* {tournament}\n"
-        f"*Formato:* {match_type} (MD{n_games})\n\n"
-        f"🏆 `{t1.get('name','TBD')}` *{s1}* — *{s2}* `{t2.get('name','TBD')}`\n"
-    )
-
-    streams = match.get("streams_list", [])
-    if streams:
-        links = [f"[{s.get('language','?').upper()}]({s.get('raw_url','')})" for s in streams[:3] if s.get("raw_url")]
-        if links:
-            text += f"\n📺 *Streams:* {' | '.join(links)}"
+    lines = [
+        "🎮 DETALHES DA PARTIDA",
+        "",
+        f"Status: {status_label}",
+        f"Data: {begin_at}",
+        f"Liga: {league}",
+    ]
+    if serie:
+        lines.append(f"Serie: {serie}")
+    if tournament:
+        lines.append(f"Torneio: {tournament}")
+    if match_type:
+        lines.append(f"Formato: {match_type} (MD{n_games})")
+    lines.append("")
+    lines.append(f"🏆 {n1} {s1} x {s2} {n2}")
 
     games = match.get("games", [])
     if games:
-        text += f"\n\n*Mapas ({len(games)}):*"
+        lines.append("")
+        lines.append(f"Mapas ({len(games)}):")
         for g in games:
             gs = g.get("status", "")
             gname = g.get("map", {}).get("name", f"Jogo {g.get('position','?')}")
             if gs == "finished":
                 w = g.get("winner") or {}
-                text += f"\n  • {gname} → {w.get('name','')} ✅"
+                lines.append(f"  • {gname} → {w.get('name','')} ✅")
             elif gs == "running":
-                text += f"\n  • {gname} 🔴"
+                lines.append(f"  • {gname} 🔴")
             else:
-                text += f"\n  • {gname} ⏳"
+                lines.append(f"  • {gname} ⏳")
 
-    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+    streams = match.get("streams_list", [])
+    stream_keyboard = []
+    for s in streams[:3]:
+        url = s.get("raw_url", "")
+        lang = s.get("language", "").upper() or "STREAM"
+        if url:
+            stream_keyboard.append(InlineKeyboardButton(f"📺 {lang}", url=url))
+
+    keyboard = []
+    if stream_keyboard:
+        keyboard.append(stream_keyboard)
+    keyboard.append([InlineKeyboardButton("🔙 Menu", callback_data="menu")])
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        disable_web_page_preview=True,
+    )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -678,6 +734,93 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]),
         )
 
+    # ── Limpar conversa
+    elif data == "clear":
+        await query.answer()
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+
+        # Tenta deletar as últimas 50 mensagens do bot
+        deleted = 0
+        for i in range(message_id, max(message_id - 50, 0), -1):
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=i)
+                deleted += 1
+            except Exception:
+                pass
+
+        confirm = await context.bot.send_message(
+            chat_id=chat_id,
+            text="🗑️ Conversa limpa!",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    # ── Detalhe de partida via notificação
+    elif data.startswith("match_detail_"):
+        mid = data.replace("match_detail_", "")
+        await query.answer()
+        match = get_match_detail(int(mid))
+        if not match:
+            await query.message.reply_text("❌ Partida não encontrada.")
+            return
+
+        status = match.get("status", "unknown")
+        status_label = {"running": "🔴 Ao Vivo", "not_started": "📅 Agendada", "finished": "✅ Encerrada"}.get(status, status)
+        t1, t2 = _teams(match)
+        s1, s2 = _scores(match, t1, t2)
+        league = match.get("league", {}).get("name", "")
+        serie = match.get("serie", {}).get("full_name", "")
+        tournament = match.get("tournament", {}).get("name", "")
+        match_type = match.get("match_type", "")
+        n_games = match.get("number_of_games", "")
+        begin_at = format_datetime(match.get("begin_at", ""))
+
+        text = (
+            f"🎮 *DETALHES DA PARTIDA*\n\n"
+            f"*Status:* {status_label}\n"
+            f"*Data:* {begin_at}\n"
+            f"*Liga:* {league}\n"
+            f"*Série:* {serie}\n"
+            f"*Torneio:* {tournament}\n"
+            f"*Formato:* {match_type} (MD{n_games})\n\n"
+            f"🏆 `{t1.get('name','TBD')}` *{s1}* — *{s2}* `{t2.get('name','TBD')}`\n"
+        )
+
+        streams = match.get("streams_list", [])
+        stream_buttons = []
+        for s in streams[:3]:
+            url = s.get("raw_url", "")
+            lang = s.get("language", "").upper() or "STREAM"
+            if url:
+                stream_buttons.append(InlineKeyboardButton(f"📺 {lang}", url=url))
+
+        games = match.get("games", [])
+        if games:
+            text += f"\n*Mapas ({len(games)}):*"
+            for g in games:
+                gs = g.get("status", "")
+                gname = g.get("map", {}).get("name", f"Jogo {g.get('position','?')}")
+                if gs == "finished":
+                    w = g.get("winner") or {}
+                    text += f"\n  • {gname} → {w.get('name','')} ✅"
+                elif gs == "running":
+                    text += f"\n  • {gname} 🔴"
+                else:
+                    text += f"\n  • {gname} ⏳"
+
+        detail_keyboard = []
+        if stream_buttons:
+            detail_keyboard.append(stream_buttons)
+        detail_keyboard.append([InlineKeyboardButton("🔙 Menu", callback_data="menu")])
+
+        await query.message.reply_text(
+            text,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+            reply_markup=InlineKeyboardMarkup(detail_keyboard),
+        )
+
     # ── Ajuda
     elif data == "help":
         await cmd_help(update, context)
@@ -721,14 +864,27 @@ async def check_and_notify(context: ContextTypes.DEFAULT_TYPE):
                         f"🔴 *PARTIDA AO VIVO!*\n\n"
                         f"⭐ Seu time favorito *{team_name}* está jogando!\n\n"
                         f"🏆 {campeonato}\n"
-                        f"🎮 `{t1.get('name','TBD')}` vs `{t2.get('name','TBD')}`\n\n"
-                        f"Use /match {mid} para ver detalhes e placar ao vivo!"
+                        f"🎮 `{t1.get('name','TBD')}` vs `{t2.get('name','TBD')}`"
                     )
+
+                    # Busca stream para colocar no botão
+                    streams = match.get("streams_list", [])
+                    stream_url = next(
+                        (s.get("raw_url") for s in streams if s.get("raw_url")),
+                        None
+                    )
+
+                    live_keyboard = []
+                    if stream_url:
+                        live_keyboard.append([InlineKeyboardButton("📺 Assistir ao vivo", url=stream_url)])
+                    live_keyboard.append([InlineKeyboardButton("📊 Ver placar e detalhes", callback_data=f"match_detail_{mid}")])
+
                     try:
                         await context.bot.send_message(
                             chat_id=int(user_id_str),
                             text=msg,
                             parse_mode="Markdown",
+                            reply_markup=InlineKeyboardMarkup(live_keyboard),
                         )
                         new_notified.add(notif_key)
                     except Exception as e:
