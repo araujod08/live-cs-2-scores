@@ -3,28 +3,9 @@ import { NextResponse } from "next/server"
 const PANDASCORE_API = "https://api.pandascore.co"
 const API_TOKEN = process.env.PANDASCORE_API_KEY
 
-interface PandaScorePlayer {
-  id: number
-  name: string
-  first_name?: string | null
-  last_name?: string | null
-  nationality?: string | null
-  image_url?: string | null
-  role?: string | null
-  age?: number | null
-}
-
-interface PandaScoreTeam {
-  id: number
-  name: string
-  image_url: string | null
-  location: string | null
-  players?: PandaScorePlayer[]
-}
-
-async function fetchPandaScore<T>(path: string): Promise<T | null> {
+async function fetchJSON<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(`${PANDASCORE_API}${path}`, {
+    const res = await fetch(url, {
       headers: { Accept: "application/json" },
       next: { revalidate: 30 },
     })
@@ -35,8 +16,35 @@ async function fetchPandaScore<T>(path: string): Promise<T | null> {
   }
 }
 
+async function findMatchById(id: string): Promise<any | null> {
+  const endpoints = ["running", "upcoming", "past"]
+
+  // Try recent matches first
+  for (const ep of endpoints) {
+    const data = await fetchJSON<any[]>(
+      `${PANDASCORE_API}/csgo/matches/${ep}?token=${API_TOKEN}&per_page=100`,
+    )
+    if (data) {
+      const found = data.find((m) => String(m.id) === id)
+      if (found) return found
+    }
+  }
+
+  // Fallback: paginate past matches deeper for older history
+  for (let page = 2; page <= 5; page++) {
+    const data = await fetchJSON<any[]>(
+      `${PANDASCORE_API}/csgo/matches/past?token=${API_TOKEN}&per_page=100&page=${page}`,
+    )
+    if (!data || data.length === 0) break
+    const found = data.find((m) => String(m.id) === id)
+    if (found) return found
+  }
+
+  return null
+}
+
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
@@ -49,9 +57,7 @@ export async function GET(
   }
 
   try {
-    const match = await fetchPandaScore<any>(
-      `/csgo/matches/${id}?token=${API_TOKEN}`,
-    )
+    const match = await findMatchById(id)
 
     if (!match) {
       return NextResponse.json({ error: "Match not found" }, { status: 404 })
@@ -68,18 +74,14 @@ export async function GET(
     const team1 = opponents[0].opponent
     const team2 = opponents[1].opponent
 
-    // Fetch team details with players
-    const [team1Data, team2Data, headToHead] = await Promise.all([
-      fetchPandaScore<PandaScoreTeam>(
-        `/csgo/teams/${team1.id}?token=${API_TOKEN}`,
-      ),
-      fetchPandaScore<PandaScoreTeam>(
-        `/csgo/teams/${team2.id}?token=${API_TOKEN}`,
-      ),
-      fetchPandaScore<any[]>(
-        `/csgo/matches/past?token=${API_TOKEN}&filter[opponent_id]=${team1.id},${team2.id}&per_page=10`,
-      ),
-    ])
+    // Players come from each opponent object in /matches list endpoints
+    const team1Players = team1.players || []
+    const team2Players = team2.players || []
+
+    // Head-to-head: fetch past matches of team1 and filter for team2
+    const headToHeadRaw = await fetchJSON<any[]>(
+      `${PANDASCORE_API}/csgo/matches/past?token=${API_TOKEN}&filter[opponent_id]=${team1.id}&per_page=30&sort=-begin_at`,
+    )
 
     // Calculate maps won
     let team1Maps = 0
@@ -102,7 +104,8 @@ export async function GET(
     const team2Score = team2Result?.score ?? opponents[1].score ?? team2Maps
 
     // Process head-to-head
-    const validHeadToHead = (headToHead || []).filter((m: any) => {
+    const validHeadToHead = (headToHeadRaw || []).filter((m: any) => {
+      if (String(m.id) === id) return false
       const ids = (m.opponents || []).map((o: any) => o.opponent.id)
       return ids.includes(team1.id) && ids.includes(team2.id)
     })
@@ -142,6 +145,17 @@ export async function GET(
           ? "finished"
           : "upcoming"
 
+    const mapPlayer = (p: any) => ({
+      id: String(p.id),
+      name: p.name,
+      firstName: p.first_name || undefined,
+      lastName: p.last_name || undefined,
+      nationality: p.nationality || undefined,
+      imageUrl: p.image_url || undefined,
+      role: p.role || undefined,
+      age: p.age || undefined,
+    })
+
     const detail = {
       id: String(match.id),
       team1: {
@@ -160,7 +174,9 @@ export async function GET(
       },
       status,
       tournament: match.league?.name || match.tournament?.name || "Unknown",
-      tournamentId: match.tournament?.id ? String(match.tournament.id) : undefined,
+      tournamentId: match.tournament?.id
+        ? String(match.tournament.id)
+        : undefined,
       tournamentLogo: match.league?.image_url || undefined,
       bestOf: match.number_of_games || 1,
       mapsWon: [team1Maps, team2Maps] as [number, number],
@@ -191,7 +207,9 @@ export async function GET(
         official: s.official,
       })),
       games: games
-        .filter((g: any) => g.status === "running" || g.status === "finished")
+        .filter(
+          (g: any) => g.status === "running" || g.status === "finished",
+        )
         .map((g: any) => {
           let winner: "team1" | "team2" | undefined
           if (g.winner) {
@@ -205,42 +223,20 @@ export async function GET(
             winner,
           }
         }),
-      team1Roster: team1Data
-        ? {
-            id: String(team1Data.id),
-            name: team1Data.name,
-            logo: team1Data.image_url || "",
-            country: team1Data.location || "",
-            players: (team1Data.players || []).map((p) => ({
-              id: String(p.id),
-              name: p.name,
-              firstName: p.first_name || undefined,
-              lastName: p.last_name || undefined,
-              nationality: p.nationality || undefined,
-              imageUrl: p.image_url || undefined,
-              role: p.role || undefined,
-              age: p.age || undefined,
-            })),
-          }
-        : undefined,
-      team2Roster: team2Data
-        ? {
-            id: String(team2Data.id),
-            name: team2Data.name,
-            logo: team2Data.image_url || "",
-            country: team2Data.location || "",
-            players: (team2Data.players || []).map((p) => ({
-              id: String(p.id),
-              name: p.name,
-              firstName: p.first_name || undefined,
-              lastName: p.last_name || undefined,
-              nationality: p.nationality || undefined,
-              imageUrl: p.image_url || undefined,
-              role: p.role || undefined,
-              age: p.age || undefined,
-            })),
-          }
-        : undefined,
+      team1Roster: {
+        id: String(team1.id),
+        name: team1.name,
+        logo: team1.image_url || "",
+        country: team1.location || "",
+        players: team1Players.map(mapPlayer),
+      },
+      team2Roster: {
+        id: String(team2.id),
+        name: team2.name,
+        logo: team2.image_url || "",
+        country: team2.location || "",
+        players: team2Players.map(mapPlayer),
+      },
       headToHead: {
         totalMatches: validHeadToHead.length,
         team1Wins,
@@ -252,7 +248,7 @@ export async function GET(
 
     return NextResponse.json({ match: detail })
   } catch (error) {
-    console.error("PandaScore API error:", error)
+    console.error("[v0] match detail error:", error)
     return NextResponse.json(
       { error: "Failed to fetch match details" },
       { status: 500 },

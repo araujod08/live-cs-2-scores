@@ -3,9 +3,9 @@ import { NextResponse } from "next/server"
 const PANDASCORE_API = "https://api.pandascore.co"
 const API_TOKEN = process.env.PANDASCORE_API_KEY
 
-async function fetchPandaScore<T>(path: string): Promise<T | null> {
+async function fetchJSON<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(`${PANDASCORE_API}${path}`, {
+    const res = await fetch(url, {
       headers: { Accept: "application/json" },
       next: { revalidate: 60 },
     })
@@ -14,6 +14,32 @@ async function fetchPandaScore<T>(path: string): Promise<T | null> {
   } catch {
     return null
   }
+}
+
+async function findTournament(id: string): Promise<any | null> {
+  const endpoints = ["running", "upcoming", "past"]
+
+  for (const ep of endpoints) {
+    const data = await fetchJSON<any[]>(
+      `${PANDASCORE_API}/csgo/tournaments/${ep}?token=${API_TOKEN}&per_page=100`,
+    )
+    if (data) {
+      const found = data.find((t) => String(t.id) === id)
+      if (found) return found
+    }
+  }
+
+  // Deeper pagination of past
+  for (let page = 2; page <= 5; page++) {
+    const data = await fetchJSON<any[]>(
+      `${PANDASCORE_API}/csgo/tournaments/past?token=${API_TOKEN}&per_page=100&page=${page}`,
+    )
+    if (!data || data.length === 0) break
+    const found = data.find((t) => String(t.id) === id)
+    if (found) return found
+  }
+
+  return null
 }
 
 function processMatch(match: any) {
@@ -62,6 +88,7 @@ function processMatch(match: any) {
     mapsWon: [team1Maps, team2Maps] as [number, number],
     startTime: match.begin_at || match.scheduled_at,
     streamUrl: match.streams_list?.find((s: any) => s.main)?.raw_url,
+    round: match.round || null,
   }
 }
 
@@ -79,15 +106,7 @@ export async function GET(
   }
 
   try {
-    const [tournament, matches, brackets] = await Promise.all([
-      fetchPandaScore<any>(`/csgo/tournaments/${id}?token=${API_TOKEN}`),
-      fetchPandaScore<any[]>(
-        `/csgo/tournaments/${id}/matches?token=${API_TOKEN}&per_page=100`,
-      ),
-      fetchPandaScore<any[]>(
-        `/csgo/tournaments/${id}/brackets?token=${API_TOKEN}`,
-      ),
-    ])
+    const tournament = await findTournament(id)
 
     if (!tournament) {
       return NextResponse.json(
@@ -96,14 +115,18 @@ export async function GET(
       )
     }
 
-    const status =
-      tournament.live_supported && tournament.has_bracket
-        ? "running"
-        : new Date(tournament.end_at) < new Date()
-          ? "finished"
-          : new Date(tournament.begin_at) > new Date()
-            ? "upcoming"
-            : "running"
+    // Get matches via filter (list endpoint, not tournament-scoped)
+    const matchesData = await fetchJSON<any[]>(
+      `${PANDASCORE_API}/csgo/matches?token=${API_TOKEN}&filter[tournament_id]=${id}&per_page=100&sort=begin_at`,
+    )
+
+    const now = new Date()
+    const beginAt = tournament.begin_at ? new Date(tournament.begin_at) : null
+    const endAt = tournament.end_at ? new Date(tournament.end_at) : null
+
+    let status: "running" | "finished" | "upcoming" = "upcoming"
+    if (endAt && endAt < now) status = "finished"
+    else if (beginAt && beginAt <= now) status = "running"
 
     const teams = (tournament.teams || tournament.expected_roster || [])
       .map((entry: any) => {
@@ -118,75 +141,40 @@ export async function GET(
       })
       .filter(Boolean)
 
-    const processedMatches = (matches || [])
+    const processedMatches = (matchesData || [])
       .map(processMatch)
-      .filter(Boolean)
+      .filter(Boolean) as any[]
 
-    // Group bracket matches into rounds
-    const bracketRounds: Record<
-      string,
-      Array<{
-        id: string
-        team1: { name: string; logo: string; score: number } | null
-        team2: { name: string; logo: string; score: number } | null
-        winner?: "team1" | "team2"
-        status: "live" | "upcoming" | "finished"
-        scheduledAt: string
-      }>
-    > = {}
-
-    for (const m of brackets || []) {
-      const roundKey = m.round || m.tournament_round || "Round"
-      if (!bracketRounds[roundKey]) bracketRounds[roundKey] = []
-
-      const opps = m.opponents || []
-      const t1 = opps[0]?.opponent
-      const t2 = opps[1]?.opponent
-      const r1 = m.results?.find((r: any) => r.team_id === t1?.id)
-      const r2 = m.results?.find((r: any) => r.team_id === t2?.id)
-
-      let winner: "team1" | "team2" | undefined
-      if (m.winner_id) {
-        if (m.winner_id === t1?.id) winner = "team1"
-        else if (m.winner_id === t2?.id) winner = "team2"
-      }
-
-      bracketRounds[roundKey].push({
-        id: String(m.id),
-        team1: t1
-          ? {
-              name: t1.name,
-              logo: t1.image_url || "",
-              score: r1?.score ?? 0,
-            }
-          : null,
-        team2: t2
-          ? {
-              name: t2.name,
-              logo: t2.image_url || "",
-              score: r2?.score ?? 0,
-            }
-          : null,
-        winner,
-        status:
-          m.status === "running"
-            ? "live"
-            : m.status === "finished"
-              ? "finished"
-              : "upcoming",
-        scheduledAt: m.scheduled_at,
+    // Build brackets from matches that have a round
+    const bracketRounds: Record<string, any[]> = {}
+    for (const m of processedMatches) {
+      if (!m.round) continue
+      const key = String(m.round)
+      if (!bracketRounds[key]) bracketRounds[key] = []
+      bracketRounds[key].push({
+        id: m.id,
+        team1: { name: m.team1.name, logo: m.team1.logo, score: m.team1.score },
+        team2: { name: m.team2.name, logo: m.team2.logo, score: m.team2.score },
+        winner:
+          m.status === "finished"
+            ? m.team1.score > m.team2.score
+              ? "team1"
+              : "team2"
+            : undefined,
+        status: m.status,
+        scheduledAt: m.startTime,
       })
     }
 
     const bracketArray = Object.entries(bracketRounds).map(([name, matches]) => ({
-      name,
+      name: `Round ${name}`,
       matches,
     }))
 
     const detail = {
       id: String(tournament.id),
       name: tournament.name,
-      fullName: tournament.full_name,
+      fullName: tournament.full_name || tournament.name,
       league: tournament.league?.name || "Unknown",
       leagueLogo: tournament.league?.image_url || undefined,
       beginAt: tournament.begin_at,
@@ -206,7 +194,7 @@ export async function GET(
 
     return NextResponse.json({ tournament: detail })
   } catch (error) {
-    console.error("PandaScore API error:", error)
+    console.error("[v0] tournament detail error:", error)
     return NextResponse.json(
       { error: "Failed to fetch tournament" },
       { status: 500 },
