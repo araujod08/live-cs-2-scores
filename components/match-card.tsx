@@ -1,8 +1,10 @@
 "use client"
 
+import Link from "next/link"
 import { ExternalLink, Radio, Clock, Trophy, Star } from "lucide-react"
 import type { Match } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ShareButton } from "./share-button"
 
 interface MatchCardProps {
   match: Match
@@ -24,27 +26,30 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
     })
   }
 
-  const getTeamInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((word) => word[0])
-      .join("")
-      .substring(0, 3)
-      .toUpperCase()
-  }
+  const getTeamInitials = (name: string) =>
+    name.split(" ").map((w) => w[0]).join("").substring(0, 3).toUpperCase()
+
+  const matchUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/match/${match.id}`
+      : `/match/${match.id}`
+  const shareText = `${match.team1.name} ${match.team1.score} x ${match.team2.score} ${match.team2.name} - ${match.tournament}`
 
   return (
     <div
       className={cn(
         "group relative overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5",
-        isLive && "border-live/50 shadow-lg shadow-live/10"
+        isLive && "border-live/50 shadow-lg shadow-live/10",
       )}
     >
       {/* Tournament Header */}
       <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-4 py-2">
-        <span className="text-xs font-medium text-muted-foreground">
+        <Link
+          href={match.tournamentId ? `/tournaments/${match.tournamentId}` : "/tournaments"}
+          className="truncate text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
           {match.tournament}
-        </span>
+        </Link>
         <div className="flex items-center gap-2">
           {isLive && (
             <div className="flex items-center gap-1.5 rounded-full bg-live/20 px-2 py-0.5">
@@ -55,17 +60,13 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
           {isFinished && (
             <div className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5">
               <Trophy className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground">
-                Encerrado
-              </span>
+              <span className="text-xs font-medium text-muted-foreground">Encerrado</span>
             </div>
           )}
           {isUpcoming && (
             <div className="flex items-center gap-1.5 rounded-full bg-primary/20 px-2 py-0.5">
               <Clock className="h-3 w-3 text-primary" />
-              <span className="text-xs font-medium text-primary">
-                {formatTime(match.startTime)}
-              </span>
+              <span className="text-xs font-medium text-primary">{formatTime(match.startTime)}</span>
             </div>
           )}
         </div>
@@ -74,7 +75,7 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
       {/* Games / Maps Progress */}
       {!isUpcoming && match.games && match.games.length > 0 && (
         <div className="border-b border-border bg-secondary/30 px-4 py-2">
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             {match.games.map((game) => {
               const isCurrentGame = game.status === "running"
               return (
@@ -82,9 +83,7 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
                   key={game.position}
                   className={cn(
                     "flex items-center gap-1.5 rounded px-2 py-1 text-xs",
-                    isCurrentGame
-                      ? "bg-live/10 ring-1 ring-live/30"
-                      : "bg-secondary/60"
+                    isCurrentGame ? "bg-live/10 ring-1 ring-live/30" : "bg-secondary/60",
                   )}
                 >
                   {isCurrentGame && (
@@ -99,7 +98,7 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
                           ? "text-win"
                           : game.winner === "team2"
                             ? "text-destructive"
-                            : "text-muted-foreground"
+                            : "text-muted-foreground",
                     )}
                   >
                     {game.map || `Mapa ${game.position}`}
@@ -119,7 +118,7 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
       )}
 
       {/* Match Content */}
-      <div className="p-4">
+      <Link href={`/match/${match.id}`} className="block p-4 transition-colors">
         <div className="flex items-center justify-between gap-4">
           {/* Team 1 */}
           <div className="flex flex-1 flex-col items-center gap-2">
@@ -137,22 +136,33 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
               )}
               {onToggleFavorite && (
                 <button
-                  onClick={() => onToggleFavorite({ id: match.team1.id, name: match.team1.name, logo: match.team1.logo })}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onToggleFavorite({
+                      id: match.team1.id,
+                      name: match.team1.name,
+                      logo: match.team1.logo,
+                    })
+                  }}
                   className="absolute -right-1 -top-1 rounded-full bg-card p-1 shadow-md transition-transform hover:scale-110"
+                  aria-label="Favoritar time 1"
                 >
-                  <Star className={cn("h-3.5 w-3.5", isFavorite1 ? "fill-accent text-accent" : "text-muted-foreground")} />
+                  <Star
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      isFavorite1 ? "fill-accent text-accent" : "text-muted-foreground",
+                    )}
+                  />
                 </button>
               )}
             </div>
-            <span className="text-center text-sm font-semibold text-foreground">
+            <span className="text-center text-sm font-semibold text-foreground line-clamp-2">
               {match.team1.name}
             </span>
             {!isUpcoming && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <span>Mapas:</span>
-                <span className="font-semibold text-foreground">
-                  {match.mapsWon[0]}
-                </span>
+                <span className="font-semibold text-foreground">{match.mapsWon[0]}</span>
               </div>
             )}
           </div>
@@ -165,30 +175,24 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
                   "text-4xl font-bold tabular-nums",
                   isFinished && match.team1.score > match.team2.score
                     ? "text-win"
-                    : "text-foreground"
+                    : "text-foreground",
                 )}
               >
                 {match.team1.score}
               </span>
-              <span className="text-2xl font-light text-muted-foreground">
-                :
-              </span>
+              <span className="text-2xl font-light text-muted-foreground">:</span>
               <span
                 className={cn(
                   "text-4xl font-bold tabular-nums",
                   isFinished && match.team2.score > match.team1.score
                     ? "text-win"
-                    : "text-foreground"
+                    : "text-foreground",
                 )}
               >
                 {match.team2.score}
               </span>
             </div>
-            {isUpcoming && (
-              <span className="text-xs text-muted-foreground">
-                Bo{match.bestOf}
-              </span>
-            )}
+            {isUpcoming && <span className="text-xs text-muted-foreground">Bo{match.bestOf}</span>}
           </div>
 
           {/* Team 2 */}
@@ -207,42 +211,64 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
               )}
               {onToggleFavorite && (
                 <button
-                  onClick={() => onToggleFavorite({ id: match.team2.id, name: match.team2.name, logo: match.team2.logo })}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onToggleFavorite({
+                      id: match.team2.id,
+                      name: match.team2.name,
+                      logo: match.team2.logo,
+                    })
+                  }}
                   className="absolute -right-1 -top-1 rounded-full bg-card p-1 shadow-md transition-transform hover:scale-110"
+                  aria-label="Favoritar time 2"
                 >
-                  <Star className={cn("h-3.5 w-3.5", isFavorite2 ? "fill-accent text-accent" : "text-muted-foreground")} />
+                  <Star
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      isFavorite2 ? "fill-accent text-accent" : "text-muted-foreground",
+                    )}
+                  />
                 </button>
               )}
             </div>
-            <span className="text-center text-sm font-semibold text-foreground">
+            <span className="text-center text-sm font-semibold text-foreground line-clamp-2">
               {match.team2.name}
             </span>
             {!isUpcoming && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <span>Mapas:</span>
-                <span className="font-semibold text-foreground">
-                  {match.mapsWon[1]}
-                </span>
+                <span className="font-semibold text-foreground">{match.mapsWon[1]}</span>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </Link>
 
       {/* Footer */}
-      {isLive && match.streamUrl && (
-        <div className="border-t border-border bg-secondary/30 px-4 py-2">
-          <a
-            href={match.streamUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 text-xs font-medium text-primary transition-colors hover:text-primary/80"
-          >
-            <ExternalLink className="h-3 w-3" />
-            Assistir ao vivo
-          </a>
+      <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/30 px-3 py-2">
+        <div className="flex-1">
+          {isLive && match.streamUrl && (
+            <a
+              href={match.streamUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Assistir ao vivo
+            </a>
+          )}
+          {!isLive && (
+            <Link
+              href={`/match/${match.id}`}
+              className="flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Ver detalhes
+            </Link>
+          )}
         </div>
-      )}
+        <ShareButton title={shareText} text={shareText} url={matchUrl} />
+      </div>
     </div>
   )
 }

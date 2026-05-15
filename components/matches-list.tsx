@@ -1,13 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import useSWR from "swr"
 import { MatchCard } from "./match-card"
+import { MatchRow } from "./match-row"
 import { MatchFilters } from "./match-filters"
 import { TeamSearch } from "./team-search"
 import { TournamentSearch } from "./tournament-search"
 import { FavoritesBar } from "./favorites-bar"
+import { RegionFilter } from "./region-filter"
+import { SortSelector } from "./sort-selector"
+import { ViewModeToggle } from "./view-mode-toggle"
 import { useFavorites } from "@/hooks/use-favorites"
+import { usePreferences } from "@/hooks/use-preferences"
+import { useMatchWatcher } from "@/hooks/use-match-watcher"
+import { isInRegion } from "@/lib/regions"
 import type { Match } from "@/lib/types"
 import { RefreshCw, AlertCircle, Wifi } from "lucide-react"
 
@@ -24,10 +31,18 @@ export function MatchesList() {
   const [filter, setFilter] = useState<"all" | "live" | "upcoming" | "finished">("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [tournamentQuery, setTournamentQuery] = useState("")
-  const [selectedTeam, setSelectedTeam] = useState<TeamSuggestion | null>(null)
+  const [, setSelectedTeam] = useState<TeamSuggestion | null>(null)
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
-  
+
   const { favorites, toggleFavorite, isFavorite, removeFavorite } = useFavorites()
+  const {
+    viewMode,
+    sortMode,
+    region,
+    setViewMode,
+    setSortMode,
+    setRegion,
+  } = usePreferences()
 
   const apiUrl = `/api/matches?search=${encodeURIComponent(searchQuery)}&tournament=${encodeURIComponent(tournamentQuery)}`
 
@@ -39,12 +54,11 @@ export function MatchesList() {
   const matches: Match[] = data?.matches || []
   const apiError = data?.error || error
 
-  const counts = {
-    all: matches.length,
-    live: matches.filter((m) => m.status === "live").length,
-    upcoming: matches.filter((m) => m.status === "upcoming").length,
-    finished: matches.filter((m) => m.status === "finished").length,
-  }
+  // Notification watcher for favorite teams
+  useMatchWatcher({
+    matches,
+    favoriteIds: favorites.map((f) => f.id),
+  })
 
   const handleRefresh = () => {
     mutate()
@@ -59,15 +73,55 @@ export function MatchesList() {
     }
   }
 
-  const filteredByStatus = filter === "all" 
-    ? matches 
-    : matches.filter((m) => m.status === filter)
-    
-  const displayedMatches = showFavoritesOnly
-    ? filteredByStatus.filter((m) => 
-        isFavorite(m.team1.id) || isFavorite(m.team2.id)
+  const displayedMatches = useMemo(() => {
+    let result = matches
+
+    // Status
+    if (filter !== "all") {
+      result = result.filter((m) => m.status === filter)
+    }
+
+    // Region
+    if (region !== "all") {
+      result = result.filter(
+        (m) =>
+          isInRegion(m.team1.country, region) || isInRegion(m.team2.country, region),
       )
-    : filteredByStatus
+    }
+
+    // Favorites only
+    if (showFavoritesOnly) {
+      result = result.filter(
+        (m) => isFavorite(m.team1.id) || isFavorite(m.team2.id),
+      )
+    }
+
+    // Sorting
+    const favoriteIds = new Set(favorites.map((f) => f.id))
+    const sortedResult = [...result]
+    sortedResult.sort((a, b) => {
+      // Always prioritize live matches first regardless of sort mode
+      const aLive = a.status === "live" ? 0 : 1
+      const bLive = b.status === "live" ? 0 : 1
+      if (aLive !== bLive) return aLive - bLive
+
+      if (sortMode === "favorites") {
+        const aFav = favoriteIds.has(a.team1.id) || favoriteIds.has(a.team2.id) ? 0 : 1
+        const bFav = favoriteIds.has(b.team1.id) || favoriteIds.has(b.team2.id) ? 0 : 1
+        if (aFav !== bFav) return aFav - bFav
+      }
+
+      if (sortMode === "tournament") {
+        const cmp = a.tournament.localeCompare(b.tournament)
+        if (cmp !== 0) return cmp
+      }
+
+      // Default: by start time
+      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    })
+
+    return sortedResult
+  }, [matches, filter, region, showFavoritesOnly, sortMode, favorites, isFavorite])
 
   return (
     <div className="space-y-6">
@@ -78,8 +132,8 @@ export function MatchesList() {
         showFavoritesOnly={showFavoritesOnly}
         onToggleFilter={() => setShowFavoritesOnly(!showFavoritesOnly)}
       />
-      
-      {/* Search and Filters */}
+
+      {/* Search */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row">
           <TeamSearch
@@ -87,17 +141,21 @@ export function MatchesList() {
             onChange={setSearchQuery}
             onSelect={handleTeamSelect}
           />
-          <TournamentSearch
-            value={tournamentQuery}
-            onChange={setTournamentQuery}
-          />
+          <TournamentSearch value={tournamentQuery} onChange={setTournamentQuery} />
         </div>
-        
+
+        {/* Region & Sort */}
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <RegionFilter value={region} onChange={setRegion} />
+          <SortSelector value={sortMode} onChange={setSortMode} />
+          <div className="flex flex-1 items-center justify-end gap-2">
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          </div>
+        </div>
+
+        {/* Status & Actions */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <MatchFilters
-            currentFilter={filter}
-            onFilterChange={setFilter}
-          />
+          <MatchFilters currentFilter={filter} onFilterChange={setFilter} />
 
           <div className="flex items-center gap-3">
             {!apiError && (
@@ -135,29 +193,55 @@ export function MatchesList() {
 
       {/* Loading State */}
       {isLoading && !apiError && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className={
+            viewMode === "card"
+              ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+              : "flex flex-col gap-2"
+          }
+        >
           {[...Array(6)].map((_, i) => (
             <div
               key={i}
-              className="h-64 animate-pulse rounded-lg bg-card"
+              className={
+                viewMode === "card"
+                  ? "h-64 animate-pulse rounded-lg bg-card"
+                  : "h-14 animate-pulse rounded-lg bg-card"
+              }
             />
           ))}
         </div>
       )}
 
-      {/* Matches Grid */}
+      {/* Matches */}
       {!isLoading && !apiError && displayedMatches.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {displayedMatches.map((match) => (
-            <MatchCard 
-              key={match.id} 
-              match={match} 
-              isFavorite1={isFavorite(match.team1.id)}
-              isFavorite2={isFavorite(match.team2.id)}
-              onToggleFavorite={toggleFavorite}
-            />
-          ))}
-        </div>
+        <>
+          {viewMode === "card" ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {displayedMatches.map((match) => (
+                <MatchCard
+                  key={match.id}
+                  match={match}
+                  isFavorite1={isFavorite(match.team1.id)}
+                  isFavorite2={isFavorite(match.team2.id)}
+                  onToggleFavorite={toggleFavorite}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {displayedMatches.map((match) => (
+                <MatchRow
+                  key={match.id}
+                  match={match}
+                  isFavorite1={isFavorite(match.team1.id)}
+                  isFavorite2={isFavorite(match.team2.id)}
+                  onToggleFavorite={toggleFavorite}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Empty State */}
