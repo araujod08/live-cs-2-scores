@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Users } from "lucide-react"
 import type { TeamRoster } from "@/lib/types"
 import { getCountryFlag } from "@/lib/regions"
@@ -11,7 +12,10 @@ interface TeamRosterCardProps {
 export function TeamRosterCard({ roster }: TeamRosterCardProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex items-center gap-3 border-b border-border bg-secondary/40 px-4 py-3">
+      <Link
+        href={`/team/${roster.id}`}
+        className="flex items-center gap-3 border-b border-border bg-secondary/40 px-4 py-3 transition-colors hover:bg-secondary/60"
+      >
         {roster.logo ? (
           <img
             src={roster.logo || "/placeholder.svg"}
@@ -23,14 +27,14 @@ export function TeamRosterCard({ roster }: TeamRosterCardProps) {
         )}
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">{roster.name}</h3>
-          <p className="text-xs text-muted-foreground">Roster</p>
+          <p className="text-xs text-muted-foreground">Ver perfil do time</p>
         </div>
         {roster.country && (
           <span className="text-lg" title={roster.country}>
             {getCountryFlag(roster.country)}
           </span>
         )}
-      </div>
+      </Link>
 
       {roster.players.length === 0 ? (
         <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -39,10 +43,11 @@ export function TeamRosterCard({ roster }: TeamRosterCardProps) {
       ) : (
         <ul className="divide-y divide-border">
           {roster.players.map((player) => (
-            <li
-              key={player.id}
-              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/30"
-            >
+            <li key={player.id}>
+              <Link
+                href={`/player/${player.id}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/30"
+              >
               {player.imageUrl ? (
                 <img
                   src={player.imageUrl || "/placeholder.svg"}
@@ -76,6 +81,7 @@ export function TeamRosterCard({ roster }: TeamRosterCardProps) {
                   {player.age} anos
                 </span>
               )}
+              </Link>
             </li>
           ))}
         </ul>

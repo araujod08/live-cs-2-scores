@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import useSWR from "swr"
 import {
   AlertCircle,
@@ -166,7 +167,10 @@ function RankingRow({ team }: { team: RankingTeam }) {
       </div>
 
       {/* Team */}
-      <div className="flex items-center gap-3 min-w-0">
+      <Link
+        href={`/team/${team.id}`}
+        className="flex items-center gap-3 min-w-0 group/team"
+      >
         {team.logo ? (
           <img
             src={team.logo || "/placeholder.svg"}
@@ -179,7 +183,9 @@ function RankingRow({ team }: { team: RankingTeam }) {
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">{team.name}</p>
+          <p className="truncate text-sm font-semibold text-foreground group-hover/team:text-primary transition-colors">
+            {team.name}
+          </p>
           {team.country && (
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <span>{getCountryFlag(team.country)}</span>
@@ -187,7 +193,7 @@ function RankingRow({ team }: { team: RankingTeam }) {
             </p>
           )}
         </div>
-      </div>
+      </Link>
 
       {/* Recent matches (mobile inline) */}
       <div className="hidden text-center text-sm text-foreground sm:block">
