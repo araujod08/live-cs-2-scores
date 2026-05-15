@@ -249,7 +249,7 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/30 px-3 py-2">
-        <div className="flex-1 flex items-center gap-3">
+        <div className="flex-1">
           {isLive && match.streamUrl && (
             <a
               href={match.streamUrl}

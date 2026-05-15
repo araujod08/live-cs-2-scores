@@ -48,39 +48,39 @@ export function TeamRosterCard({ roster }: TeamRosterCardProps) {
                 href={`/player/${player.id}`}
                 className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/30"
               >
-              {player.imageUrl ? (
-                <img
-                  src={player.imageUrl || "/placeholder.svg"}
-                  alt={player.name}
-                  className="h-9 w-9 rounded-full bg-secondary object-cover"
-                />
-              ) : (
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-xs font-bold text-muted-foreground">
-                  {(player.firstName?.[0] || player.name[0] || "?").toUpperCase()}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="text-sm font-semibold text-foreground truncate">
-                    {player.name}
-                  </span>
-                  {player.nationality && (
-                    <span className="text-sm" title={player.nationality}>
-                      {getCountryFlag(player.nationality)}
+                {player.imageUrl ? (
+                  <img
+                    src={player.imageUrl || "/placeholder.svg"}
+                    alt={player.name}
+                    className="h-9 w-9 rounded-full bg-secondary object-cover"
+                  />
+                ) : (
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-xs font-bold text-muted-foreground">
+                    {(player.firstName?.[0] || player.name[0] || "?").toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="text-sm font-semibold text-foreground truncate">
+                      {player.name}
                     </span>
-                  )}
+                    {player.nationality && (
+                      <span className="text-sm" title={player.nationality}>
+                        {getCountryFlag(player.nationality)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {[player.firstName, player.lastName].filter(Boolean).join(" ") ||
+                      player.role ||
+                      "Player"}
+                  </p>
                 </div>
-                <p className="truncate text-xs text-muted-foreground">
-                  {[player.firstName, player.lastName].filter(Boolean).join(" ") ||
-                    player.role ||
-                    "Player"}
-                </p>
-              </div>
-              {player.age && (
-                <span className="text-xs font-medium text-muted-foreground">
-                  {player.age} anos
-                </span>
-              )}
+                {player.age && (
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {player.age} anos
+                  </span>
+                )}
               </Link>
             </li>
           ))}
