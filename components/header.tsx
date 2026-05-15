@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Crosshair, Trophy, BarChart3, Radio, Menu, X } from "lucide-react"
+import { Crosshair, Trophy, BarChart3, Radio, Menu, X, Calendar } from "lucide-react"
 import { useState } from "react"
 import { ThemeToggle } from "./theme-toggle"
 import { NotificationsToggle } from "./notifications-toggle"
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 
 const NAV_LINKS = [
   { href: "/", label: "Partidas", icon: Radio },
+  { href: "/calendar", label: "Calendário", icon: Calendar },
   { href: "/tournaments", label: "Campeonatos", icon: Trophy },
   { href: "/rankings", label: "Rankings", icon: BarChart3 },
 ] as const

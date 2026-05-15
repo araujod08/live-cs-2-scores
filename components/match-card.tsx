@@ -1,10 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { ExternalLink, Radio, Clock, Trophy, Star } from "lucide-react"
+import { ExternalLink, Radio, Clock, Trophy, Star, PictureInPicture2 } from "lucide-react"
 import type { Match } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { ShareButton } from "./share-button"
+import { useSpectator } from "@/hooks/use-spectator"
 
 interface MatchCardProps {
   match: Match
@@ -17,6 +18,8 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
   const isLive = match.status === "live"
   const isFinished = match.status === "finished"
   const isUpcoming = match.status === "upcoming"
+  const { spectate, spectatedMatchId } = useSpectator()
+  const isSpectating = spectatedMatchId === match.id
 
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr)
@@ -267,7 +270,27 @@ export function MatchCard({ match, isFavorite1, isFavorite2, onToggleFavorite }:
             </Link>
           )}
         </div>
-        <ShareButton title={shareText} text={shareText} url={matchUrl} />
+        <div className="flex items-center gap-1">
+          {isLive && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                spectate(match.id)
+              }}
+              title={isSpectating ? "Acompanhando" : "Acompanhar no mini player"}
+              aria-label="Acompanhar no mini player"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded transition-colors",
+                isSpectating
+                  ? "bg-live/20 text-live"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
+            >
+              <PictureInPicture2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <ShareButton title={shareText} text={shareText} url={matchUrl} />
+        </div>
       </div>
     </div>
   )
