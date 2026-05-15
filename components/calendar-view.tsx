@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import useSWR from "swr"
+import { toast } from "sonner"
 import {
   ChevronLeft,
   ChevronRight,
@@ -109,7 +110,37 @@ export function CalendarView() {
     setSelectedDate(new Date())
   }
 
-  const exportUrl = `/api/calendar?format=ics${favoritesOnly ? `&favorites=${favorites.map((f) => f.id).join(",")}` : ""}`
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    if (exporting) return
+    if (favoritesOnly && favorites.length === 0) {
+      toast.error("Você não tem times favoritos para exportar.")
+      return
+    }
+    setExporting(true)
+    try {
+      const url = `/api/calendar?format=ics${
+        favoritesOnly ? `&favorites=${favorites.map((f) => f.id).join(",")}` : ""
+      }`
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = blobUrl
+      a.download = "cs2-live.ics"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+      toast.success("Calendário exportado com sucesso.")
+    } catch (err) {
+      toast.error("Falha ao exportar o calendário. Tente novamente.")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -158,14 +189,15 @@ export function CalendarView() {
               Apenas favoritos
             </button>
           )}
-          <a
-            href={exportUrl}
-            download
-            className="flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             <Download className="h-3.5 w-3.5" />
-            Exportar .ics
-          </a>
+            {exporting ? "Exportando..." : "Exportar .ics"}
+          </button>
         </div>
       </div>
 
