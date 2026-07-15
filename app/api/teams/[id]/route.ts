@@ -80,10 +80,11 @@ export async function GET(
     return NextResponse.json({ error: "API key not configured" }, { status: 500 })
   }
 
-  // 1) Try fetching team profile directly
-  const teamData = (await safeFetch(
-    `${PANDASCORE_API}/csgo/teams/${id}?token=${API_TOKEN}`,
-  )) as PandaTeamApi | null
+  // 1) Fetch team using filter[id] (free plan compatible — direct /teams/{id} returns 404)
+  const teamList = (await safeFetch(
+    `${PANDASCORE_API}/csgo/teams?token=${API_TOKEN}&filter%5Bid%5D=${id}`,
+  )) as PandaTeamApi[] | null
+  const teamData = teamList?.[0] ?? null
 
   // 2) Fetch matches from all lists then filter for this team
   const [running, upcoming, past] = await Promise.all([

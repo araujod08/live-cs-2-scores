@@ -74,9 +74,18 @@ export async function GET(
     const team1 = opponents[0].opponent
     const team2 = opponents[1].opponent
 
-    // Players come from each opponent object in /matches list endpoints
-    const team1Players = team1.players || []
-    const team2Players = team2.players || []
+    // Fetch rosters using filter[id] (free plan compatible)
+    const [roster1Data, roster2Data] = await Promise.all([
+      fetchJSON<any[]>(
+        `${PANDASCORE_API}/csgo/teams?token=${API_TOKEN}&filter%5Bid%5D=${team1.id}`,
+      ),
+      fetchJSON<any[]>(
+        `${PANDASCORE_API}/csgo/teams?token=${API_TOKEN}&filter%5Bid%5D=${team2.id}`,
+      ),
+    ])
+
+    const team1Players = roster1Data?.[0]?.players || []
+    const team2Players = roster2Data?.[0]?.players || []
 
     // Head-to-head: fetch past matches of team1 and filter for team2
     const headToHeadRaw = await fetchJSON<any[]>(
