@@ -23,6 +23,8 @@ from telegram.ext import (
     filters,
 )
 
+from control_server import start_control_server
+
 load_dotenv(".env.local")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -805,7 +807,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     w = g.get("winner") or {}
                     text += f"\n  • {gname} → {w.get('name','')} ✅"
                 elif gs == "running":
-                    text += f"\n  • {gname} 🔴"
+                    text += f"\n  • {gname} ����"
                 else:
                     text += f"\n  • {gname} ⏳"
 
@@ -995,6 +997,9 @@ def main():
 
     # Job de notificações automáticas (a cada 5 minutos)
     app.job_queue.run_repeating(check_and_notify, interval=NOTIFY_INTERVAL, first=30)
+
+    # Servidor de controle HTTP (status/restart) para o painel admin web
+    start_control_server()
 
     logger.info("🤖 CS2 Bot iniciado! Pressione Ctrl+C para parar.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
